@@ -1,0 +1,21 @@
+[package]
+name = "fyrox-savegame-free"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Game-oriented save/load system for Fyrox. Save slots, metadata, versioning, LZ4 compression, and CRC32 integrity checks out of the box."
+keywords = ["game", "save", "load", "serialization", "fyrox"]
+categories = ["game-development"]
+repository = "https://github.com/AbyoSoftware/fyrox-savegame-free"
+readme = "README.md"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+bincode = "1.3.3"
+thiserror = "2"
+crc32fast = "1.4"
+lz4_flex = { version = "0.11", optional = true }
+
+[features]
+default = ["compression-lz4"]
+compression-lz4 = ["dep:lz4_flex"]
