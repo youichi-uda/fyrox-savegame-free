@@ -49,8 +49,14 @@ impl SaveManager {
         let bytes = save_file::encode_save(data, metadata, &self.config)?;
         let path = self.slot_path(slot);
         let tmp_path = path.with_extension("fxsave.tmp");
-        std::fs::write(&tmp_path, &bytes)?;
-        std::fs::rename(&tmp_path, &path)?;
+        std::fs::write(&tmp_path, &bytes).map_err(|source| SaveError::IoAt {
+            path: tmp_path.clone(),
+            source,
+        })?;
+        std::fs::rename(&tmp_path, &path).map_err(|source| SaveError::IoAt {
+            path: path.clone(),
+            source,
+        })?;
         Ok(())
     }
 
@@ -60,7 +66,10 @@ impl SaveManager {
         if !path.exists() {
             return Err(SaveError::SlotNotFound(slot.to_string()));
         }
-        let bytes = std::fs::read(&path)?;
+        let bytes = std::fs::read(&path).map_err(|source| SaveError::IoAt {
+            path: path.clone(),
+            source,
+        })?;
         save_file::decode_save(&bytes, &self.config, self.migrations.as_ref())
     }
 
@@ -78,7 +87,10 @@ impl SaveManager {
     pub fn delete_slot(&self, slot: &str) -> SaveResult<()> {
         let path = self.slot_path(slot);
         if path.exists() {
-            std::fs::remove_file(&path)?;
+            std::fs::remove_file(&path).map_err(|source| SaveError::IoAt {
+                path: path.clone(),
+                source,
+            })?;
         }
         Ok(())
     }
@@ -100,7 +112,7 @@ impl SaveManager {
                     .unwrap_or_default()
                     .to_string_lossy()
                     .to_string();
-                match self.peek_metadata(&path) {
+                match self.peek_metadata_at(&path) {
                     Ok(meta) => slots.push(SlotInfo {
                         name: slot_name,
                         metadata: meta,
@@ -118,8 +130,11 @@ impl SaveManager {
         Ok(slots)
     }
 
-    fn peek_metadata(&self, path: &Path) -> SaveResult<SaveMetadata> {
-        let bytes = std::fs::read(path)?;
+    fn peek_metadata_at(&self, path: &Path) -> SaveResult<SaveMetadata> {
+        let bytes = std::fs::read(path).map_err(|source| SaveError::IoAt {
+            path: path.to_path_buf(),
+            source,
+        })?;
         #[derive(serde::Deserialize)]
         struct Envelope {
             magic: u32,
@@ -150,4 +165,41 @@ impl SaveManager {
 pub struct SlotInfo {
     pub name: String,
     pub metadata: SaveMetadata,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn unique_temp_dir(name: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!("fyrox_sg_free_unit_{name}_{nanos}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    #[test]
+    fn ioat_carries_path_on_missing_file() {
+        let dir = unique_temp_dir("ioat_missing");
+        let manager = SaveManager::new(&dir, SaveConfig::default()).unwrap();
+
+        // Load a slot whose .fxsave was created but is unreadable garbage so
+        // bincode fails; alternatively, use peek on a path that does not
+        // exist. We construct a deliberately missing slot file path and call
+        // peek_metadata_at (used internally by list_slots) to confirm the
+        // IoAt variant carries the offending path.
+        let bogus = dir.join("does_not_exist.fxsave");
+        let err = manager.peek_metadata_at(&bogus).unwrap_err();
+        match err {
+            SaveError::IoAt { path, source: _ } => {
+                assert_eq!(path, bogus, "IoAt must report the path that failed");
+            }
+            other => panic!("expected SaveError::IoAt, got {other:?}"),
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

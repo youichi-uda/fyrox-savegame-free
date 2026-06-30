@@ -1,9 +1,21 @@
+use std::path::PathBuf;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum SaveError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+
+    /// I/O error with the file path that caused it, for richer diagnostics.
+    ///
+    /// Returned by `SaveManager` operations (save/load/peek/delete/rename/copy/
+    /// restore) whenever the underlying filesystem call fails on a known path.
+    #[error("I/O error at {path}: {source}")]
+    IoAt {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
 
     #[error("Serialization error: {0}")]
     Serialize(#[from] bincode::Error),
