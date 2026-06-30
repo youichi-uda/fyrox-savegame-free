@@ -83,6 +83,61 @@ impl SaveManager {
         self.load("quicksave")
     }
 
+    /// Rename a slot file from `from` to `to`.
+    ///
+    /// Returns [`SaveError::SlotNotFound`] if `from` does not exist, and
+    /// [`SaveError::IoAt`] (pointing at `to`) if `to` already exists (no
+    /// overwrite). Use [`Self::delete_slot`] on `to` first if you want to
+    /// overwrite.
+    pub fn rename_slot(&self, from: &str, to: &str) -> SaveResult<()> {
+        let src = self.slot_path(from);
+        if !src.exists() {
+            return Err(SaveError::SlotNotFound(from.to_string()));
+        }
+        let dst = self.slot_path(to);
+        if dst.exists() {
+            return Err(SaveError::IoAt {
+                path: dst.clone(),
+                source: std::io::Error::new(
+                    std::io::ErrorKind::AlreadyExists,
+                    format!("destination slot '{to}' already exists"),
+                ),
+            });
+        }
+        std::fs::rename(&src, &dst).map_err(|source| SaveError::IoAt {
+            path: dst.clone(),
+            source,
+        })?;
+        Ok(())
+    }
+
+    /// Copy a slot file from `from` to `to`.
+    ///
+    /// Returns [`SaveError::SlotNotFound`] if `from` does not exist, and
+    /// [`SaveError::IoAt`] (pointing at `to`) if `to` already exists (no
+    /// overwrite).
+    pub fn copy_slot(&self, from: &str, to: &str) -> SaveResult<()> {
+        let src = self.slot_path(from);
+        if !src.exists() {
+            return Err(SaveError::SlotNotFound(from.to_string()));
+        }
+        let dst = self.slot_path(to);
+        if dst.exists() {
+            return Err(SaveError::IoAt {
+                path: dst.clone(),
+                source: std::io::Error::new(
+                    std::io::ErrorKind::AlreadyExists,
+                    format!("destination slot '{to}' already exists"),
+                ),
+            });
+        }
+        std::fs::copy(&src, &dst).map_err(|source| SaveError::IoAt {
+            path: dst.clone(),
+            source,
+        })?;
+        Ok(())
+    }
+
     /// Delete a save slot.
     pub fn delete_slot(&self, slot: &str) -> SaveResult<()> {
         let path = self.slot_path(slot);
@@ -223,6 +278,75 @@ mod tests {
         // Missing slot -> SlotNotFound, not an IoAt.
         let err = manager.peek_metadata("does_not_exist").unwrap_err();
         assert!(matches!(err, SaveError::SlotNotFound(_)));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rename_slot_moves_file_and_refuses_overwrite() {
+        use crate::metadata::SaveMetadata;
+
+        let dir = unique_temp_dir("rename_slot");
+        let manager = SaveManager::new(&dir, SaveConfig::default()).unwrap();
+
+        manager.save("a", &42u32, SaveMetadata::new()).unwrap();
+        assert!(manager.slot_exists("a"));
+        assert!(!manager.slot_exists("b"));
+
+        manager.rename_slot("a", "b").unwrap();
+        assert!(!manager.slot_exists("a"));
+        assert!(manager.slot_exists("b"));
+        let (val, _): (u32, _) = manager.load("b").unwrap();
+        assert_eq!(val, 42);
+
+        // Rename of missing source returns SlotNotFound.
+        let err = manager.rename_slot("a", "c").unwrap_err();
+        assert!(matches!(err, SaveError::SlotNotFound(_)));
+
+        // Refuses to overwrite an existing destination.
+        manager.save("c", &7u32, SaveMetadata::new()).unwrap();
+        let err = manager.rename_slot("b", "c").unwrap_err();
+        match err {
+            SaveError::IoAt { path, source } => {
+                assert!(path.ends_with("c.fxsave"));
+                assert_eq!(source.kind(), std::io::ErrorKind::AlreadyExists);
+            }
+            other => panic!("expected IoAt(AlreadyExists), got {other:?}"),
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn copy_slot_duplicates_file_and_refuses_overwrite() {
+        use crate::metadata::SaveMetadata;
+
+        let dir = unique_temp_dir("copy_slot");
+        let manager = SaveManager::new(&dir, SaveConfig::default()).unwrap();
+
+        manager.save("src", &99u32, SaveMetadata::new()).unwrap();
+        manager.copy_slot("src", "dst").unwrap();
+
+        assert!(manager.slot_exists("src"));
+        assert!(manager.slot_exists("dst"));
+        let (a, _): (u32, _) = manager.load("src").unwrap();
+        let (b, _): (u32, _) = manager.load("dst").unwrap();
+        assert_eq!(a, 99);
+        assert_eq!(b, 99);
+
+        // Missing source.
+        let err = manager.copy_slot("nope", "x").unwrap_err();
+        assert!(matches!(err, SaveError::SlotNotFound(_)));
+
+        // Existing destination.
+        let err = manager.copy_slot("src", "dst").unwrap_err();
+        match err {
+            SaveError::IoAt { path, source } => {
+                assert!(path.ends_with("dst.fxsave"));
+                assert_eq!(source.kind(), std::io::ErrorKind::AlreadyExists);
+            }
+            other => panic!("expected IoAt(AlreadyExists), got {other:?}"),
+        }
 
         let _ = std::fs::remove_dir_all(&dir);
     }
