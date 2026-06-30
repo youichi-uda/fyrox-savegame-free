@@ -2,11 +2,12 @@
 name = "fyrox-savegame-free"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.87"
 license = "MIT"
 description = "Game-oriented save/load system for Fyrox. Save slots, metadata, versioning, LZ4 compression, and CRC32 integrity checks out of the box."
 keywords = ["game", "save", "load", "serialization", "fyrox"]
 categories = ["game-development"]
-repository = "https://github.com/AbyoSoftware/fyrox-savegame-free"
+repository = "https://github.com/youichi-uda/fyrox-savegame-free"
 readme = "README.md"
 
 [dependencies]

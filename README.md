@@ -59,7 +59,6 @@ fn main() {
 | Zstd compression | | :white_check_mark: |
 | Async background saving | | :white_check_mark: |
 | Auto-save with rotating slots | | :white_check_mark: |
-| Editor UI integration | | :white_check_mark: |
 | Priority support | | :white_check_mark: |
 
 ## Save Versioning & Migration
@@ -88,11 +87,17 @@ let manager = SaveManager::new("./saves", SaveConfig { version: 2, ..Default::de
 fyrox-savegame-free = "0.1"
 ```
 
+## Engine Integration
+
+This crate is engine-agnostic: it depends only on `serde`/`bincode`, so it works with
+Fyrox or any other Rust game. Serialize your own game-state structs and store them in
+named slots -- there are no engine-specific bindings to wire up.
+
 ## Pro Version
 
-Need encryption, async saving, or editor integration?
+Need encryption, async saving, or Zstd compression?
 
-**[Get fyrox-savegame-pro on Gumroad](https://abyosoftware.gumroad.com)**
+**[Get fyrox-savegame-pro on itch.io](https://y1uda.itch.io/fyrox-savegame-pro)**
 
 ## License
 

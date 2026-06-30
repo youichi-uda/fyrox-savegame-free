@@ -27,11 +27,14 @@ pub enum CompressionKind {
     Lz4,
 }
 
+// Not derivable: the default variant depends on the `compression-lz4` feature
+// (Lz4 when enabled, None otherwise), which `#[derive(Default)]` cannot express.
+#[allow(clippy::derivable_impls)]
 impl Default for CompressionKind {
     fn default() -> Self {
         #[cfg(feature = "compression-lz4")]
         {
-            return CompressionKind::Lz4;
+            CompressionKind::Lz4
         }
         #[cfg(not(feature = "compression-lz4"))]
         {

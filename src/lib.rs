@@ -15,7 +15,10 @@
 //! ## Pro Version
 //!
 //! The Pro version adds SHA-256 integrity, AES-256-GCM encryption, Zstd compression,
-//! async background saving, auto-save with rotating slots, and editor UI integration.
+//! async background saving, and auto-save with rotating slots.
+//!
+//! This crate is engine-agnostic (it depends only on `serde`/`bincode`), so it works
+//! with Fyrox or any other Rust game.
 
 mod error;
 mod integrity;

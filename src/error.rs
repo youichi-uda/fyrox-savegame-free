@@ -28,6 +28,15 @@ pub enum SaveError {
 
     #[error("Decompression error: {0}")]
     Decompression(String),
+
+    #[error("Encryption error: {0}")]
+    Encryption(String),
+
+    #[error("Decryption error: {0}")]
+    Decryption(String),
+
+    #[error("Integrity check failed: {0}")]
+    Integrity(String),
 }
 
 pub type SaveResult<T> = Result<T, SaveError>;
