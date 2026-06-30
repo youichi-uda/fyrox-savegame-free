@@ -130,6 +130,24 @@ impl SaveManager {
         Ok(slots)
     }
 
+    /// Peek the [`SaveMetadata`] header of a slot without fully deserializing
+    /// the payload.
+    ///
+    /// This reads the slot file and decodes only the leading envelope
+    /// (magic + version + compression + metadata), so for non-trivial saves
+    /// this is significantly faster than a full [`Self::load`] and avoids
+    /// having to know the user's `T: Deserialize` type at the call site.
+    ///
+    /// Returns [`SaveError::SlotNotFound`] if the slot file does not exist
+    /// and [`SaveError::IoAt`] for filesystem errors with the offending path.
+    pub fn peek_metadata(&self, slot: &str) -> SaveResult<SaveMetadata> {
+        let path = self.slot_path(slot);
+        if !path.exists() {
+            return Err(SaveError::SlotNotFound(slot.to_string()));
+        }
+        self.peek_metadata_at(&path)
+    }
+
     fn peek_metadata_at(&self, path: &Path) -> SaveResult<SaveMetadata> {
         let bytes = std::fs::read(path).map_err(|source| SaveError::IoAt {
             path: path.to_path_buf(),
@@ -179,6 +197,34 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("fyrox_sg_free_unit_{name}_{nanos}"));
         let _ = std::fs::remove_dir_all(&dir);
         dir
+    }
+
+    #[test]
+    fn peek_metadata_roundtrip() {
+        use crate::metadata::SaveMetadata;
+
+        let dir = unique_temp_dir("peek_metadata_roundtrip");
+        let manager = SaveManager::new(&dir, SaveConfig::default()).unwrap();
+
+        let payload: Vec<u32> = (0..1000).collect();
+        let meta = SaveMetadata::new()
+            .with_description("Peek test")
+            .with_play_time(123.0)
+            .with_custom("zone", "F1");
+        manager.save("peek_slot", &payload, meta).unwrap();
+
+        // Public peek API: returns the metadata without needing the payload
+        // type, and (per design) without deserializing the payload.
+        let peeked = manager.peek_metadata("peek_slot").unwrap();
+        assert_eq!(peeked.description, "Peek test");
+        assert_eq!(peeked.play_time_secs, 123.0);
+        assert_eq!(peeked.custom.get("zone").unwrap(), "F1");
+
+        // Missing slot -> SlotNotFound, not an IoAt.
+        let err = manager.peek_metadata("does_not_exist").unwrap_err();
+        assert!(matches!(err, SaveError::SlotNotFound(_)));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
