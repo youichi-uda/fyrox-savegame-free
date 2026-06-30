@@ -50,6 +50,13 @@ pub struct SaveConfig {
     pub version: u32,
     /// Which compression to use.
     pub compression: CompressionKind,
+    /// If `true`, [`crate::SaveManager::save`] moves the previous slot file
+    /// (if any) to `<slot>.fxsave.bak` before atomically writing the new
+    /// version. The backup can then be restored via
+    /// [`crate::SaveManager::restore_backup`].
+    ///
+    /// Defaults to `false` so existing behavior is unchanged.
+    pub keep_backup_on_overwrite: bool,
 }
 
 impl Default for SaveConfig {
@@ -57,6 +64,7 @@ impl Default for SaveConfig {
         Self {
             version: 1,
             compression: CompressionKind::default(),
+            keep_backup_on_overwrite: false,
         }
     }
 }

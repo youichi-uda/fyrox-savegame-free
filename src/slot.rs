@@ -39,7 +39,16 @@ impl SaveManager {
         self.save_dir.join(format!("{}.fxsave", slot))
     }
 
+    fn backup_path(&self, slot: &str) -> PathBuf {
+        self.save_dir.join(format!("{}.fxsave.bak", slot))
+    }
+
     /// Save game data to a named slot.
+    ///
+    /// If [`SaveConfig::keep_backup_on_overwrite`] is `true` and a slot file
+    /// already exists, the previous file is moved to `<slot>.fxsave.bak`
+    /// before the new file is written. The backup can be restored via
+    /// [`Self::restore_backup`].
     pub fn save<T: Serialize>(
         &self,
         slot: &str,
@@ -48,12 +57,41 @@ impl SaveManager {
     ) -> SaveResult<()> {
         let bytes = save_file::encode_save(data, metadata, &self.config)?;
         let path = self.slot_path(slot);
+
+        // Optional backup of the previous slot file before overwrite.
+        if self.config.keep_backup_on_overwrite && path.exists() {
+            let bak = self.backup_path(slot);
+            std::fs::rename(&path, &bak).map_err(|source| SaveError::IoAt {
+                path: bak.clone(),
+                source,
+            })?;
+        }
+
         let tmp_path = path.with_extension("fxsave.tmp");
         std::fs::write(&tmp_path, &bytes).map_err(|source| SaveError::IoAt {
             path: tmp_path.clone(),
             source,
         })?;
         std::fs::rename(&tmp_path, &path).map_err(|source| SaveError::IoAt {
+            path: path.clone(),
+            source,
+        })?;
+        Ok(())
+    }
+
+    /// Restore the `.fxsave.bak` backup of a slot back to the live slot.
+    ///
+    /// Only meaningful when saves were written with
+    /// [`SaveConfig::keep_backup_on_overwrite`] enabled. The current slot
+    /// file (if any) is overwritten by the backup. Returns
+    /// [`SaveError::SlotNotFound`] if no backup exists for the slot.
+    pub fn restore_backup(&self, slot: &str) -> SaveResult<()> {
+        let bak = self.backup_path(slot);
+        if !bak.exists() {
+            return Err(SaveError::SlotNotFound(format!("{slot}.fxsave.bak")));
+        }
+        let path = self.slot_path(slot);
+        std::fs::rename(&bak, &path).map_err(|source| SaveError::IoAt {
             path: path.clone(),
             source,
         })?;
@@ -347,6 +385,83 @@ mod tests {
             }
             other => panic!("expected IoAt(AlreadyExists), got {other:?}"),
         }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn keep_backup_on_overwrite_creates_bak_file() {
+        use crate::metadata::SaveMetadata;
+
+        let dir = unique_temp_dir("backup_create");
+        let config = SaveConfig {
+            keep_backup_on_overwrite: true,
+            ..SaveConfig::default()
+        };
+        let manager = SaveManager::new(&dir, config).unwrap();
+
+        manager
+            .save("slot1", &1u32, SaveMetadata::new().with_description("v1"))
+            .unwrap();
+        // First save: no previous file, no backup expected.
+        assert!(!dir.join("slot1.fxsave.bak").exists());
+
+        manager
+            .save("slot1", &2u32, SaveMetadata::new().with_description("v2"))
+            .unwrap();
+        // Second save: backup file must exist.
+        assert!(dir.join("slot1.fxsave.bak").exists());
+
+        // Live slot now holds v2.
+        let (val, meta): (u32, _) = manager.load("slot1").unwrap();
+        assert_eq!(val, 2);
+        assert_eq!(meta.description, "v2");
+
+        // list_slots must not surface the .bak file as a slot.
+        let slots = manager.list_slots().unwrap();
+        assert_eq!(slots.len(), 1);
+        assert_eq!(slots[0].name, "slot1");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn restore_backup_reverts_to_previous_version() {
+        use crate::metadata::SaveMetadata;
+
+        let dir = unique_temp_dir("backup_restore");
+        let config = SaveConfig {
+            keep_backup_on_overwrite: true,
+            ..SaveConfig::default()
+        };
+        let manager = SaveManager::new(&dir, config).unwrap();
+
+        manager
+            .save("slot1", &10u32, SaveMetadata::new().with_description("first"))
+            .unwrap();
+        manager
+            .save(
+                "slot1",
+                &20u32,
+                SaveMetadata::new().with_description("second"),
+            )
+            .unwrap();
+
+        // Confirm current live save is "second"/20.
+        let (val, meta): (u32, _) = manager.load("slot1").unwrap();
+        assert_eq!(val, 20);
+        assert_eq!(meta.description, "second");
+
+        // Restore: live slot should become "first"/10 again, .bak consumed.
+        manager.restore_backup("slot1").unwrap();
+        assert!(!dir.join("slot1.fxsave.bak").exists());
+        let (val, meta): (u32, _) = manager.load("slot1").unwrap();
+        assert_eq!(val, 10);
+        assert_eq!(meta.description, "first");
+
+        // Restoring again with no backup present returns SlotNotFound.
+        let err = manager.restore_backup("slot1").unwrap_err();
+        assert!(matches!(err, SaveError::SlotNotFound(_)));
 
         let _ = std::fs::remove_dir_all(&dir);
     }

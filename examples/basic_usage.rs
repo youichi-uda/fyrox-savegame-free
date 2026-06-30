@@ -19,6 +19,7 @@ fn main() {
     let config = SaveConfig {
         version: 1,
         compression: CompressionKind::default(),
+        ..SaveConfig::default()
     };
 
     let manager = SaveManager::new("./example_saves", config).expect("Failed to create save dir");

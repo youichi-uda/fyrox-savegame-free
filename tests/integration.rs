@@ -120,6 +120,7 @@ fn test_encode_decode_no_compression() {
     let config = SaveConfig {
         version: 1,
         compression: CompressionKind::None,
+        ..SaveConfig::default()
     };
 
     let player = sample_player();
@@ -149,12 +150,14 @@ fn test_migration() {
     let config_v1 = SaveConfig {
         version: 1,
         compression: CompressionKind::None,
+        ..SaveConfig::default()
     };
     let bytes = encode_save(&100u32, SaveMetadata::new(), &config_v1).unwrap();
 
     let config_v2 = SaveConfig {
         version: 2,
         compression: CompressionKind::None,
+        ..SaveConfig::default()
     };
 
     let mut migrations = MigrationRegistry::new();
