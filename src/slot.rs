@@ -114,7 +114,7 @@ impl SaveManager {
                 }
             }
         }
-        slots.sort_by(|a, b| b.metadata.updated_at.cmp(&a.metadata.updated_at));
+        slots.sort_by_key(|s| std::cmp::Reverse(s.metadata.updated_at));
         Ok(slots)
     }
 
